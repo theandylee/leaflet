@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -9,53 +9,137 @@ namespace NegativeEddy.Leaflet.Story
 {
     public class ZObject
     {
-        // offsets into the byte array to find data items
-        private const int ParentIDOffset = 4;
-        private const int SiblingIDOffset = 5;
-        private const int ChildIDOffset = 6;
-        private const int PropertyAddressOffset = 7;
-        private const int ZOBJECT_ARRAY_SIZE = 31;
+        private const int ZOBJECT_ARRAY_SIZE_V1_3 = 31;
+        private const int ZOBJECT_ARRAY_SIZE_V4 = 63;
+
+        private readonly byte _version;
+        private int ParentIDOffset => _version <= 3 ? 4 : 6;
+        private int SiblingIDOffset => _version <= 3 ? 5 : 8;
+        private int ChildIDOffset => _version <= 3 ? 6 : 10;
+        private int PropertyAddressOffset => _version <= 3 ? 7 : 12;
 
         public const string UNNAMED_OBJECT_NAME = "<unnamed>";
         public const int INVALID_ID = 0;
 
         private readonly byte[] _bytes;
 
-        public static ZObject InvalidObject = new ZObject(null, 0, ZObject.INVALID_ID);
+        public static ZObject InvalidObject = new ZObject(null, 0, ZObject.INVALID_ID, 3);
 
         public static ushort[] DefaultProperties { get; set; }
 
         public int BaseAddress { get; }
         public int ID { get; }
 
-        /// <summary>
-        /// A bitmask indicating whether an object has an attribute (1) or does not (0).
-        /// The mask is backwards so that bit 0 is the most significant bit, and bit 31
-        /// is the least significant bit
-        /// </summary>
-        private uint Attributes
+        private ulong Attributes
         {
-            get { return _bytes.GetDWord(BaseAddress); }
-            set { _bytes.SetDWord(value, BaseAddress); }
+            get
+            {
+                if (_version <= 3)
+                {
+                    return _bytes.GetDWord(BaseAddress);
+                }
+                else
+                {
+                    return ((ulong)_bytes.GetWord(BaseAddress) << 32) | ((ulong)_bytes.GetWord(BaseAddress + 2) << 16) | (ulong)_bytes.GetWord(BaseAddress + 4);
+                }
+            }
+            set
+            {
+                if (_version <= 3)
+                {
+                    _bytes.SetDWord((uint)value, BaseAddress);
+                }
+                else
+                {
+                    _bytes.SetWord((ushort)(value >> 32), BaseAddress);
+                    _bytes.SetWord((ushort)(value >> 16), BaseAddress + 2);
+                    _bytes.SetWord((ushort)value, BaseAddress + 4);
+                }
+            }
         }
 
         public int ParentID
         {
-            get { return _bytes[BaseAddress + ParentIDOffset]; }
-            set { _bytes[BaseAddress + ParentIDOffset] = (byte)value; }
-        }
-        public int SiblingID
-        {
-            get { return _bytes[BaseAddress + SiblingIDOffset]; }
-            set { _bytes[BaseAddress + SiblingIDOffset] = (byte)value; }
-        }
-        public int ChildID
-        {
-            get { return _bytes[BaseAddress + ChildIDOffset]; }
-            set { _bytes[BaseAddress + ChildIDOffset] = (byte)value; }
+            get
+            {
+                if (_version <= 3)
+                {
+                    return _bytes[BaseAddress + ParentIDOffset];
+                }
+                else
+                {
+                    return _bytes.GetWord(BaseAddress + ParentIDOffset);
+                }
+            }
+            set
+            {
+                if (_version <= 3)
+                {
+                    _bytes[BaseAddress + ParentIDOffset] = (byte)value;
+                }
+                else
+                {
+                    _bytes.SetWord((ushort)value, BaseAddress + ParentIDOffset);
+                }
+            }
         }
 
-        public int PropertyTableAddress { get { return (int)_bytes.GetWord(BaseAddress + PropertyAddressOffset); } }
+        public int SiblingID
+        {
+            get
+            {
+                if (_version <= 3)
+                {
+                    return _bytes[BaseAddress + SiblingIDOffset];
+                }
+                else
+                {
+                    return _bytes.GetWord(BaseAddress + SiblingIDOffset);
+                }
+            }
+            set
+            {
+                if (_version <= 3)
+                {
+                    _bytes[BaseAddress + SiblingIDOffset] = (byte)value;
+                }
+                else
+                {
+                    _bytes.SetWord((ushort)value, BaseAddress + SiblingIDOffset);
+                }
+            }
+        }
+
+        public int ChildID
+        {
+            get
+            {
+                if (_version <= 3)
+                {
+                    return _bytes[BaseAddress + ChildIDOffset];
+                }
+                else
+                {
+                    return _bytes.GetWord(BaseAddress + ChildIDOffset);
+                }
+            }
+            set
+            {
+                if (_version <= 3)
+                {
+                    _bytes[BaseAddress + ChildIDOffset] = (byte)value;
+                }
+                else
+                {
+                    _bytes.SetWord((ushort)value, BaseAddress + ChildIDOffset);
+                }
+            }
+        }
+
+        public int PropertyTableAddress
+        {
+            get { return (int)_bytes.GetWord(BaseAddress + PropertyAddressOffset); }
+        }
 
         public override string ToString()
         {
@@ -65,15 +149,16 @@ namespace NegativeEddy.Leaflet.Story
         public string ToLongString()
         {
             StringBuilder sb = new StringBuilder();
-            sb.Append($"ID:{ID} Name:{this.ShortName.Replace(' ','_')} Attributes:");
+            sb.Append($"ID:{ID} Name:{this.ShortName.Replace(' ', '_')} Attributes:");
+            int maxBit = _version <= 3 ? 31 : 47;
             foreach (var bit in Attributes.GetBits())
             {
-                sb.Append((31 - (int)bit).ToString());    // TODO: Is printing wrong or are bit labels backwards?
+                sb.Append((maxBit - (int)bit).ToString());
                 sb.Append(',');
             }
 
             // remove the last comma if attributes were added
-            if (sb[sb.Length-1] == ',')
+            if (sb[sb.Length - 1] == ',')
             {
                 sb.Remove(sb.Length - 1, 1);
             }
@@ -81,10 +166,10 @@ namespace NegativeEddy.Leaflet.Story
             sb.Append(" ");
 
             sb.Append($"Parent:{ParentID} Sibling:{SiblingID} Child:{ChildID} ");
-            sb.Append($"PropertyAddr:{PropertyTableAddress:x4} " );
+            sb.Append($"PropertyAddr:{PropertyTableAddress:x4} ");
 
             sb.Append("Properties:");
-            foreach (var prop in CustomProperties.OrderBy(x=>x.ID))
+            foreach (var prop in CustomProperties.OrderBy(x => x.ID))
             {
                 sb.Append($"[{prop.ID}],");
                 foreach (byte b in prop.Data)
@@ -106,11 +191,13 @@ namespace NegativeEddy.Leaflet.Story
         {
             StringBuilder sb = new StringBuilder();
             sb.Append($"{ID}. Attributes: ");
+            int maxBit = _version <= 3 ? 31 : 47;
             foreach (var bit in Attributes.GetBits())
             {
-                sb.Append((31 - (int)bit).ToString());    // TODO: Is printing wrong or is bit labels backwards?
+                sb.Append((maxBit - (int)bit).ToString());
                 sb.Append(',');
             }
+
             sb.AppendLine();
 
             sb.AppendLine($"   Parent object:  {ParentID}  Sibling object: {SiblingID}  Child object:  {ChildID}");
@@ -125,34 +212,32 @@ namespace NegativeEddy.Leaflet.Story
                 {
                     sb.Append($"{b:x2}  ");
                 }
+
                 sb.AppendLine();
             }
+
             return sb.ToString();
         }
 
-        public int ShortNameLengthInBytes
+        public int ShortNameLengthInWords
         {
             get { return (int)_bytes[PropertyTableAddress]; }
         }
 
         public string ShortName
         {
-            get
-            {
-                return NameBuilder?.ToString() ?? UNNAMED_OBJECT_NAME;
-            }
+            get { return NameBuilder?.ToString() ?? UNNAMED_OBJECT_NAME; }
         }
 
         private ZStringBuilder NameBuilder
         {
             get
             {
-                int currentIndex = PropertyTableAddress;
-                int length = ShortNameLengthInBytes;
-                currentIndex++;
+                int length = ShortNameLengthInWords;
+                int currentIndex = PropertyTableAddress + 1;
                 if (length > 0)
                 {
-                    var zb = new ZStringBuilder(_bytes, currentIndex, length);
+                    var zb = new ZStringBuilder(_bytes, currentIndex, length * 2);
                     return zb;
                 }
                 else
@@ -161,7 +246,11 @@ namespace NegativeEddy.Leaflet.Story
                 }
             }
         }
-        private int NameLengthInBytes { get { return NameBuilder?.LengthInBytes ?? 0; } }
+
+        private int NameLengthInBytes
+        {
+            get { return ShortNameLengthInWords * 2; }
+        }
 
         public uint GetPropertyValue(int propertyID)
         {
@@ -190,7 +279,7 @@ namespace NegativeEddy.Leaflet.Story
                 // When the game attempts to read the value of property n for an object which 
                 // does not provide property n, the n-th entry in this table is the resulting 
                 // value. spec 12.2
-                ushort value = DefaultProperties[propertyID-1];
+                ushort value = DefaultProperties[propertyID - 1];
                 Debug.WriteLine($"  Default property used for prop {propertyID}. Value = {value}");
                 return value;
             }
@@ -228,28 +317,24 @@ namespace NegativeEddy.Leaflet.Story
             {
                 int propertyAddress = PropertyTableAddress + 1 + NameLengthInBytes;
                 var properties = new List<ZObjectProperty>();
-                var prop = new ZObjectProperty(_bytes, propertyAddress);
+                var prop = new ZObjectProperty(_bytes, propertyAddress, _version);
                 while (prop.ID != 0)
                 {
                     properties.Add(prop);
                     propertyAddress += prop.LengthInBytes;
-                    prop = new ZObjectProperty(_bytes, propertyAddress);
-
+                    prop = new ZObjectProperty(_bytes, propertyAddress, _version);
                 }
+
                 return properties.ToArray();
             }
         }
 
-        static ZObject()
-        {
-            DefaultProperties = new ushort[ZOBJECT_ARRAY_SIZE];
-        }
-
-        public ZObject(byte[] bytes, int baseAddress, int ID)
+        public ZObject(byte[] bytes, int baseAddress, int ID, byte version)
         {
             this.ID = ID;
             _bytes = bytes;
             BaseAddress = baseAddress;
+            _version = version;
         }
 
         /// <summary>
@@ -259,19 +344,14 @@ namespace NegativeEddy.Leaflet.Story
         /// <returns>true if the object has the atttribute set</returns>
         public bool HasAttribute(BitNumber attributeNumber)
         {
-            // must flip the bit number because the Attributes are in reverse significant bit order
-            return Attributes.FetchBits((BitNumber)(31-(int)attributeNumber), 1) == 1;
+            int maxBit = _version <= 3 ? 31 : 47;
+            return Attributes.FetchBits((BitNumber)(maxBit - (int)attributeNumber), 1) == 1;
         }
 
-        /// <summary>
-        /// Sets or clears an attribute on an object
-        /// </summary>
-        /// <param name="attributeNumber">the bit of the attribute to change (0-31)</param>
-        /// <param name="set">if true, the attribute is set, else the attribute is cleared</param>
         public void SetAttribute(BitNumber attributeNumber, bool set)
         {
-            // must flip the bit number because the Attributes are in reverse significant bit order
-            Attributes = Attributes.SetBit((BitNumber)(31 - (int)attributeNumber), set);
+            int maxBit = _version <= 3 ? 31 : 47;
+            Attributes = Attributes.SetBit((BitNumber)(maxBit - (int)attributeNumber), set);
         }
     }
 }

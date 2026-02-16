@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -18,15 +18,32 @@ namespace NegativeEddy.Leaflet.Memory
             return -1;
         }
 
+        public static uint UnpackAddress(ushort address, byte version)
+        {
+            if (version <= 3)
+            {
+                return (uint)(address * 2);
+            }
+            else
+            {
+                return (uint)(address * 4);
+            }
+        }
+
         public static uint UnpackAddress(ushort address)
         {
-            return (uint)(address * 2); // unpack for v1-3
+            return UnpackAddress(address, 3);
+        }
+
+        public static uint GetWordUnpacked(this IList<byte> data, int address, byte version)
+        {
+            ushort word = GetWord(data, address);
+            return UnpackAddress(word, version);
         }
 
         public static uint GetWordUnpacked(this IList<byte> data, int address)
         {
-            ushort word = GetWord(data, address);
-            return UnpackAddress(word);
+            return GetWordUnpacked(data, address, 3);
         }
 
         public static ushort GetWord(this IList<byte> data, int address)
@@ -89,6 +106,38 @@ namespace NegativeEddy.Leaflet.Memory
                 }
             }
             return bits.ToArray();
+        }
+
+        public static BitNumber[] GetBits(this ulong qword)
+        {
+            List<BitNumber> bits = new List<BitNumber>();
+            for (int i = 47; i >= 0; i--)
+            {
+                BitNumber num = (BitNumber)i;
+                if (qword.FetchBits(num, 1) == 1)
+                {
+                    bits.Add(num);
+                }
+            }
+            return bits.ToArray();
+        }
+
+        public static ulong SetBit(this ulong qword, BitNumber bit, bool setToOne)
+        {
+            if (setToOne)
+            {
+                ulong mask = (1ul << (int)bit);
+                return qword | mask;
+            }
+            ulong mask2 = ~(1ul << (int)bit);
+            return qword & mask2;
+        }
+
+        public static ulong FetchBits(this ulong qword, BitNumber high, int length)
+        {
+            var mask = ~(-1L << length);
+            var result = (qword >> ((int)high - length + 1)) & (ulong)mask;
+            return result;
         }
 
         public static uint SetBit(this uint dword, BitNumber bit, bool setToOne )
@@ -199,5 +248,21 @@ namespace NegativeEddy.Leaflet.Memory
         Bit_29,
         Bit_30,
         Bit_31,
+        Bit_32,
+        Bit_33,
+        Bit_34,
+        Bit_35,
+        Bit_36,
+        Bit_37,
+        Bit_38,
+        Bit_39,
+        Bit_40,
+        Bit_41,
+        Bit_42,
+        Bit_43,
+        Bit_44,
+        Bit_45,
+        Bit_46,
+        Bit_47,
     }
 }

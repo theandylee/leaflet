@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 
 namespace NegativeEddy.Leaflet.Instructions
 {
@@ -72,13 +72,13 @@ namespace NegativeEddy.Leaflet.Instructions
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_16"), HasStore = true,  HasBranch = false, Name ="loadb", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_17"), HasStore = true,  HasBranch = false, Name ="get_prop", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_18"), HasStore = true,  HasBranch = false, Name ="get_prop_addr", } ,
-            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_19"), HasStore = true,  HasBranch = false, Name ="get_prop_prop", } ,
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_19"), HasStore = true,  HasBranch = false, Name ="get_next_prop", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_20"), HasStore = true,  HasBranch = false, Name ="add", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_21"), HasStore = true,  HasBranch = false, Name ="sub", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_22"), HasStore = true,  HasBranch = false, Name ="mul", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_23"), HasStore = true,  HasBranch = false, Name ="div", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_24"), HasStore = true,  HasBranch = false, Name ="mod", } ,
-            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_25"), IsCall=true, HasStore = true,  HasBranch = false, Name ="call_s2", } ,
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_25"), IsCall=true, HasStore = true,  HasBranch = false, Name ="call_2s", } ,
 
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_26"), IsCall=true, HasStore = false, HasBranch = false, Name ="call_2n", } ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP2_27"), HasStore = false, HasBranch = false, Name ="set_colour", } ,
@@ -123,8 +123,8 @@ namespace NegativeEddy.Leaflet.Instructions
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_179"), HasStore = false, HasBranch = false, Name ="print_ret" ,} ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_180"), HasStore = false, HasBranch = false, Name ="nop" ,} ,
 
-            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_181"), HasStore = false, HasBranch = true,  Name ="save" ,} ,
-            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_182"), HasStore = false, HasBranch = true,  Name ="restore" ,} ,
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_181"), HasStore = false, HasBranch = true,  Name ="save" ,} ,  // V1-3 (V4+ has store, no branch)
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_182"), HasStore = false, HasBranch = true,  Name ="restore" ,} , // V1-3 (V4+ has store, no branch)
 
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_183"), HasStore = false, HasBranch = false,  Name ="restart" ,} ,
             new OpcodeDefinition{ ID = new OpcodeIdentifier("OP0_184"), HasStore = false, HasBranch = false,  Name ="ret_popped" ,} ,
@@ -165,8 +165,11 @@ namespace NegativeEddy.Leaflet.Instructions
 
             new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_234"), HasStore = false, HasBranch = false, Name ="split_window" ,} , // v3
             new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_235"), HasStore = false, HasBranch = false, Name ="set_window" ,} , // v3
-
             new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_236"), HasStore = true, HasBranch = false, Name ="call_vs2" ,} , // v4
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_237"), HasStore = false, HasBranch = false, Name ="erase_window" ,} , // v4
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_239"), HasStore = false, HasBranch = false, Name ="set_cursor" ,} , // v4
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_241"), HasStore = false, HasBranch = false, Name ="set_text_style" ,} , // v4
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_242"), HasStore = false, HasBranch = false, Name ="buffer_mode" ,} , // v4
 
             // (skipping some post v3 opcodes here)
 
@@ -174,6 +177,8 @@ namespace NegativeEddy.Leaflet.Instructions
 
             new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_244"), HasStore = false, HasBranch = false, Name ="input_stream" ,} , // v3
             new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_245"), HasStore = false, HasBranch = false, Name ="sound_effect" ,} , // v5/3
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_246"), HasStore = true, HasBranch = false, Name ="read_char" ,} , // v4
+            new OpcodeDefinition{ ID = new OpcodeIdentifier("VAR_247"), HasStore = true, HasBranch = true, Name ="scan_table" ,} , // v4
 
             /////////////////////////////////////////////
             // Extended opcodes currently omitted because

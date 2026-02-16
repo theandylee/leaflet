@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -22,6 +22,7 @@ namespace NegativeEddy.Leaflet
         public IZInput Input { get; set; }
         public IObservable<string> Output { get { return _stdOut.Print; } }
         public IObservable<string> Diagnostics { get { return _dbgOut.Print; } }
+        public IObservable<ScreenOpEventArgs> ScreenOps { get { return _stdOut.ScreenOps; } }
 
         private const int UNUSED_RETURN_VALUE = -1;
 
@@ -38,7 +39,17 @@ namespace NegativeEddy.Leaflet
             FrameStack = new Stack<Routine>();
             LoadNewFrame(MainMemory.Header.PCStart - 1, 0, null);
 
+            SetScreenDimensions(80, 24);
+
             IsRunning = true;
+        }
+
+        public void SetScreenDimensions(int width, int height)
+        {
+            MainMemory.Header.ScreenWidthChars = (byte)width;
+            MainMemory.Header.ScreenHeightLines = (byte)height;
+            MainMemory.Header.ScreenWidthUnits = (ushort)width;
+            MainMemory.Header.ScreenHeightUnits = (ushort)height;
         }
 
         public void LoadState(Dictionary<string, object> state)
@@ -287,7 +298,8 @@ namespace NegativeEddy.Leaflet
         }
 
         public enum DiagnosticsLevel { Off, Informational, Verbose, Diagnostic };
-        public DiagnosticsLevel DiagnosticsOutputLevel = DiagnosticsLevel.Informational;
+
+        public DiagnosticsLevel DiagnosticsOutputLevel { get; set; } = DiagnosticsLevel.Informational;
 
         private void DebugOutput(string output, DiagnosticsLevel level = DiagnosticsLevel.Informational)
         {
@@ -337,7 +349,7 @@ namespace NegativeEddy.Leaflet
                 }
 
             }
-            ZOpcode opcode = new ZOpcode(MainMemory.Bytes, ProgramCounter);
+            ZOpcode opcode = new ZOpcode(MainMemory.Bytes, ProgramCounter, MainMemory.Header.Version);
             sb.Append(opcode.ToString());
             return sb.ToString();
         }
@@ -346,7 +358,7 @@ namespace NegativeEddy.Leaflet
 
         public ZOpcode CurrentInstruction
         {
-            get { return new ZOpcode(MainMemory.Bytes, ProgramCounter); }
+            get { return new ZOpcode(MainMemory.Bytes, ProgramCounter, MainMemory.Header.Version); }
         }
 
         private void ExecuteOpcode(ZOpcode opcode)
@@ -354,6 +366,12 @@ namespace NegativeEddy.Leaflet
             switch (opcode.Definition.Name)
             {
                 case "call":
+                    Handle_Call(opcode);
+                    break;
+                case "call_1s":
+                    Handle_Call(opcode);
+                    break;
+                case "call_2s":
                     Handle_Call(opcode);
                     break;
                 case "ret": // ret value
@@ -448,10 +466,13 @@ namespace NegativeEddy.Leaflet
                         return jg ? 1 : 0;
                     });
                     break;
-                case "jump":    // jump ?(label)
-                    int jumpAddress = GetOperandValue(opcode.Operands[0]);
-                    ProgramCounter = jumpAddress;
-                    break;
+                case "jump":
+                    {
+                        ushort rawOffset = (ushort)GetOperandValue(opcode.Operands[0]);
+                        short offset = (short)rawOffset;
+                        ProgramCounter = ProgramCounter + opcode.LengthInBytes + offset - 2;
+                        return;
+                    }
                 case "loadb":   // loadb array byte-index -> (result)
                     Handle_Opcode(opcode, op =>
                     {
@@ -626,6 +647,37 @@ namespace NegativeEddy.Leaflet
                         return UNUSED_RETURN_VALUE;
                     });
                     break;
+                case "remove_obj":  // remove_obj object
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int objectId = GetOperandValue(op.Operands[0]);
+                        // Detach the object from its parent (reparent to 0 = no parent)
+                        ZObject obj = MainMemory.ObjectTree.GetObject(objectId);
+                        if (obj != null && obj.ParentID != 0)
+                        {
+                            int oldParentId = obj.ParentID;
+                            ZObject oldParent = MainMemory.ObjectTree.GetObject(oldParentId);
+                            int oldNextSiblingId = MainMemory.ObjectTree.GetSiblingId(objectId);
+
+                            if (oldParent?.ChildID == objectId)
+                            {
+                                oldParent.ChildID = oldNextSiblingId;
+                            }
+                            else
+                            {
+                                ZObject oldPrevSibling = MainMemory.ObjectTree.Objects.FirstOrDefault(o => o.SiblingID == objectId);
+                                if (oldPrevSibling != null)
+                                {
+                                    oldPrevSibling.SiblingID = oldNextSiblingId;
+                                }
+                            }
+                            obj.ParentID = 0;
+                            obj.SiblingID = 0;
+                        }
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
                 case "print":   // print <literal-string>
                     Handle_Opcode(opcode, op =>
                     {
@@ -662,8 +714,8 @@ namespace NegativeEddy.Leaflet
                     Handle_Opcode(opcode, op =>
                     {
                         Debug.Assert(op.OperandType.Count == 1);
-                        // Print (Z-encoded) string at given byte address
-                        int address = GetOperandValue(opcode.Operands[0]) * 2;
+                        int packedAddr = GetOperandValue(opcode.Operands[0]);
+                        int address = (int)AddressHelper.UnpackAddress((ushort)packedAddr, opcode.Version);
                         var obj = new ZStringBuilder(MainMemory.Bytes, address);
                         _stdOut.WriteOutput(obj.ToString());
                         return UNUSED_RETURN_VALUE;
@@ -828,7 +880,7 @@ namespace NegativeEddy.Leaflet
                         // Get length of property data (in bytes) for the given object's property.
                         int propAddr = GetOperandValue(opcode.Operands[0]);
 
-                        ZObjectProperty prop = new ZObjectProperty(MainMemory.Bytes, propAddr - 1);
+                        ZObjectProperty prop = new ZObjectProperty(MainMemory.Bytes, propAddr - 1, MainMemory.Header.Version);
                         return prop.DataLength;
                     });
                     break;
@@ -850,7 +902,7 @@ namespace NegativeEddy.Leaflet
                 case "get_next_prop": // get_next_prop object property -> (result)
                     Handle_Opcode(opcode, op =>
                     {
-                        Debug.Assert(op.OperandType.Count == 1);
+                        Debug.Assert(op.OperandType.Count == 2);
                         int objID = GetOperandValue(opcode.Operands[0]);
                         int propertyID = GetOperandValue(opcode.Operands[1]);
 
@@ -910,17 +962,162 @@ namespace NegativeEddy.Leaflet
                     Quit();
                     break;
                 case "save":
-                    Handle_Opcode(opcode, op =>
                     {
                         _stdOut.WriteOutputLine("I'm sorry, Dave. I'm afraid I can't do that.");
+                        if (opcode.Version >= 4)
+                        {
+                            // V4+: store 0 = fail, 1 = success, 2 = restore resumed
+                            SetVariable(opcode.Store, 0);
+                            ProgramCounter += opcode.LengthInBytes;
+                        }
+                        else
+                        {
+                            // V1-3: branch on success (0 = don't branch = failure)
+                            BranchOrNext(opcode, 0);
+                        }
+                    }
+                    break;
+                case "restore":
+                    {
+                        _stdOut.WriteOutputLine("I'm sorry, Dave. I'm afraid I can't do that.");
+                        if (opcode.Version >= 4)
+                        {
+                            // V4+: store 0 = fail, 1 = success
+                            SetVariable(opcode.Store, 0);
+                            ProgramCounter += opcode.LengthInBytes;
+                        }
+                        else
+                        {
+                            // V1-3: branch on success (0 = don't branch = failure)
+                            BranchOrNext(opcode, 0);
+                        }
+                    }
+                    break;
+                case "split_window":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int lines = GetOperandValue(op.Operands[0]);
+                        _stdOut.SplitWindow(lines);
                         return UNUSED_RETURN_VALUE;
                     });
                     break;
-                case "restore":
+                case "set_window":
                     Handle_Opcode(opcode, op =>
                     {
-                        _stdOut.WriteOutputLine("I'm sorry, Dave. I'm afraid I can't do that.");
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int window = GetOperandValue(op.Operands[0]);
+                        _stdOut.SetWindow(window);
                         return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "buffer_mode":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int flag = GetOperandValue(op.Operands[0]);
+                        // If flag is 1, text output on lower window is buffered for word-wrapping
+                        // If flag is 0, it isn't buffered
+                        // For console host, we ignore this as Console handles its own buffering
+                        DebugOutput($"  buffer_mode {flag} (ignored)");
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "erase_window":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int window = GetOperandValue(op.Operands[0]);
+                        _stdOut.ClearScreen(window);
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "set_cursor":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count >= 2);
+                        int row = GetOperandValue(op.Operands[0]);
+                        int column = GetOperandValue(op.Operands[1]);
+                        _stdOut.SetCursor(row, column);
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "set_text_style":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int style = GetOperandValue(op.Operands[0]);
+                        _stdOut.SetTextStyle(style);
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "input_stream":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count == 1);
+                        int stream = GetOperandValue(op.Operands[0]);
+                        // Stream 1 = keyboard (default), others not commonly used
+                        // For now, we only support keyboard input
+                        DebugOutput($"  input_stream {stream} (ignored, keyboard only)");
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "read_char":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        Debug.Assert(op.OperandType.Count >= 1);
+                        int device = GetOperandValue(op.Operands[0]);
+                        // device 1 = keyboard (default)
+                        char c = Input.ReadChar();
+                        return (int)c;
+                    });
+                    break;
+                case "output_stream":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        int stream = GetOperandValue(op.Operands[0]);
+                        if (stream == 0)
+                        {
+                            return UNUSED_RETURN_VALUE;
+                        }
+                        // Positive = select stream, Negative = deselect stream
+                        int streamNum = System.Math.Abs(stream);
+                        bool select = stream > 0;
+                        DebugOutput($"  output_stream {streamNum} ({(select ? "select" : "deselect")})");
+                        return UNUSED_RETURN_VALUE;
+                    });
+                    break;
+                case "scan_table":
+                    Handle_Opcode(opcode, op =>
+                    {
+                        int x = GetOperandValue(op.Operands[0]);
+                        int table = GetOperandValue(op.Operands[1]);
+                        int len = GetOperandValue(op.Operands[2]);
+                        int form = op.OperandType.Count >= 4 ? GetOperandValue(op.Operands[3]) : 0x82;
+
+                        bool isWord = (form & 0x80) != 0;
+                        int fieldLen = form & 0x7F;
+                        if (fieldLen == 0) fieldLen = isWord ? 2 : 1;
+
+                        for (int i = 0; i < len; i++)
+                        {
+                            int addr = table + i * fieldLen;
+                            int value;
+                            if (isWord)
+                            {
+                                value = MainMemory.Bytes.GetWord(addr);
+                            }
+                            else
+                            {
+                                value = MainMemory.Bytes[addr];
+                            }
+
+                            if (value == x)
+                            {
+                                return addr;
+                            }
+                        }
+                        return 0;
                     });
                     break;
                 default:
@@ -948,7 +1145,7 @@ namespace NegativeEddy.Leaflet
             // move to the next instruction
             instructionCount++;
 
-            OutputDiagnosticData();
+            // OutputDiagnosticData();
         }
 
         private void OutputDiagnosticData()
@@ -1011,10 +1208,9 @@ namespace NegativeEddy.Leaflet
         {
             int callAddress = GetOperandValue(opcode.Operands[0]);
 
-            if (opcode.Operands[0].Type == OperandTypes.Variable)
+            if (opcode.Operands[0].Type == OperandTypes.Variable || opcode.Operands[0].Type == OperandTypes.SmallConstant)
             {
-                // unpack the address
-                callAddress = (int)AddressHelper.UnpackAddress((ushort)callAddress);
+                callAddress = (int)AddressHelper.UnpackAddress((ushort)callAddress, opcode.Version);
             }
 
             int nextInstruction = ProgramCounter += opcode.LengthInBytes;

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
@@ -34,13 +34,19 @@ namespace NegativeEddy.Leaflet.Memory
         /// </summary>
         /// <param name="data">the byte array</param>
         /// <param name="index">the position of the beginning of the ZString</param>
-        /// <param name="count">the length of the ZString in words to read from the byte data (not length in bytes)</param>
+        /// <param name="count">the maximum length of the ZString in bytes to read (stops at EOS bit or count, whichever comes first)</param>
         public ZStringBuilder(IList<byte> data, int index, int count)
         {
-            for(int i=0; i<count*2; i+=2)
+            int end = index + count;
+            while (index < end)
             {
-                ushort word = data.GetWord(index+i);
+                ushort word = data.GetWord(index);
                 AddWord(word);
+                if ((word & 0x8000) != 0)
+                {
+                    break;
+                }
+                index += 2;
             }
         }
 

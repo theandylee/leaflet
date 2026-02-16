@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -9,8 +9,11 @@ namespace NegativeEddy.Leaflet.Story
 {
     public class ZObjectTable : IEnumerable<ZObject>
     {
-        public ZObjectTable(byte[] data, int loadAddress)
+        private readonly byte _version;
+
+        public ZObjectTable(byte[] data, int loadAddress, byte version)
         {
+            _version = version;
             Load(data, loadAddress);
         }
 
@@ -21,27 +24,26 @@ namespace NegativeEddy.Leaflet.Story
         /// <param name="loadAddress"></param>
         private void Load(byte[] data, int loadAddress)
         {
-            // v1-3 object size is 9, if v4+ then object size is 14 
-            const int OBJECT_DEF_SIZE = 9;
+            int objectDefSize = _version <= 3 ? 9 : 14;
             int currentAddress = loadAddress;
 
-            // Load default property values
-            for (int i = 0; i < 31; i++)
+            int defaultPropCount = _version <= 3 ? 31 : 63;
+            ZObject.DefaultProperties = new ushort[defaultPropCount];
+            for (int i = 0; i < defaultPropCount; i++)
             {
                 ZObject.DefaultProperties[i] = data.GetWord(currentAddress + i * 2);
             }
-            currentAddress += 2 * 31;
-            // load the first object in order to determine how many objects there are
-            ZObject first = new ZObject(data, currentAddress, 1);
+            currentAddress += 2 * defaultPropCount;
+
+            ZObject first = new ZObject(data, currentAddress, 1, _version);
             Objects.Add(first);
 
             int firstPropList = first.PropertyTableAddress;
-            int objectCount = -(currentAddress - first.PropertyTableAddress) / OBJECT_DEF_SIZE;
+            int objectCount = (firstPropList - currentAddress) / objectDefSize;
 
             for (int i = 1; i < objectCount; i++)
             {
-                ZObject tmp = new ZObject(data, currentAddress + i * OBJECT_DEF_SIZE, i + 1);
-
+                ZObject tmp = new ZObject(data, currentAddress + i * objectDefSize, i + 1, _version);
                 Objects.Add(tmp);
             }
         }
@@ -141,11 +143,11 @@ namespace NegativeEddy.Leaflet.Story
         /// <returns>an object, null if the ID is 0</returns>
         public ZObject GetObject(int objectID)
         {
-            if (objectID == 0)
+            if (objectID <= 0 || objectID > Objects.Count)
             {
                 return null;
             }
-            return Objects.First(o => o.ID == objectID);
+            return Objects[objectID - 1];
         }
 
         public void ReparentObject(int objectID, int newParentID)

@@ -1,4 +1,4 @@
-﻿using NegativeEddy.Leaflet.Story;
+using NegativeEddy.Leaflet.Story;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -67,7 +67,7 @@ namespace NegativeEddy.Leaflet.Memory
             {
                 if (_dictionary == null)
                 {
-                    _dictionary = new ZDictionary(Bytes, Header.DictionaryAddress);
+                    _dictionary = new ZDictionary(Bytes, Header.DictionaryAddress, Header.Version);
                 }
                 return _dictionary;
             }
@@ -80,7 +80,7 @@ namespace NegativeEddy.Leaflet.Memory
             {
                 if (_objectTree == null)
                 {
-                    _objectTree = new ZObjectTable(Bytes, Header.ObjectTableAddress);
+                    _objectTree = new ZObjectTable(Bytes, Header.ObjectTableAddress, Header.Version);
                 }
                 return _objectTree;
             }

@@ -1,4 +1,4 @@
-﻿using NegativeEddy.Leaflet.Memory;
+using NegativeEddy.Leaflet.Memory;
 
 namespace NegativeEddy.Leaflet.Story
 {
@@ -49,7 +49,7 @@ namespace NegativeEddy.Leaflet.Story
 
         public byte Version { get { return _data[HeaderOffset_Version]; } }
 
-        public uint Flags1 { get { return _data.GetDWord(HeaderOffset_Flags1); } }
+        public byte Flags1 { get { return _data[HeaderOffset_Flags1]; } }
         public int ReleaseNumber { get { return _data.GetWord(HeaderOffset_ReleaseNumber); } }
         public ushort HighMemoryAddress { get { return _data.GetWord(HeaderOffset_BaseOfHighMemory); } }
         public int PCStart { get { return (int)_data.GetWord(HeaderOffset_InitialValueOfProgramCounter); } }
@@ -57,7 +57,7 @@ namespace NegativeEddy.Leaflet.Story
         public ushort ObjectTableAddress { get { return _data.GetWord(HeaderOffset_LocationOfObjectTable); } }
         public ushort GlobalVariablesTableAddress { get { return _data.GetWord(HeaderOffset_LocationOfGlobalVariablesTable); } }
         public ushort StaticMemoryAddress { get { return _data.GetWord(HeaderOffset_BaseOfStaticMemory); } }
-        public uint Flags2 { get { return _data.GetDWord(HeaderOffset_Flags2); } }
+        public ushort Flags2 { get { return _data.GetWord(HeaderOffset_Flags2); } }
 
         public string SerialCode
         {
@@ -75,14 +75,51 @@ namespace NegativeEddy.Leaflet.Story
         }
 
         public ushort AbbreviationsTableAddress { get { return _data.GetWord(HeaderOffset_LocationOfAbbreviationsTable); } }
-        public ushort Filelength { get { return _data.GetWord(HeaderOffset_Lengthoffile); } }
+        
+        public int FileLength
+        {
+            get
+            {
+                ushort rawLength = _data.GetWord(HeaderOffset_Lengthoffile);
+                int multiplier;
+                if (Version <= 3)
+                {
+                    multiplier = 2;
+                }
+                else if (Version <= 5)
+                {
+                    multiplier = 4;
+                }
+                else
+                {
+                    multiplier = 8;
+                }
+                return rawLength * multiplier;
+            }
+        }
         public ushort Checksum { get { return _data.GetWord(HeaderOffset_ChecksumOfFile); } }
         public byte InterpreterNumber { get { return _data[HeaderOffset_Interpreternumber]; } }
         public byte InterpreterVersion { get { return _data[HeaderOffset_Interpreterversion]; } }
-        public byte ScreenHeightLines { get { return _data[HeaderOffset_ScreenheightinLines]; } }
-        public byte ScreenWidthChars { get { return _data[HeaderOffset_ScreenwidthInChars]; } }
-        public ushort ScreenHeightUnits { get { return _data.GetWord(HeaderOffset_ScreenheightInUnits); } }
-        public ushort ScreenWidthUnits { get { return _data.GetWord(HeaderOffset_ScreenwidthInUnits); } }
+        public byte ScreenHeightLines
+        {
+            get { return _data[HeaderOffset_ScreenheightinLines]; }
+            set { _data[HeaderOffset_ScreenheightinLines] = value; }
+        }
+        public byte ScreenWidthChars
+        {
+            get { return _data[HeaderOffset_ScreenwidthInChars]; }
+            set { _data[HeaderOffset_ScreenwidthInChars] = value; }
+        }
+        public ushort ScreenHeightUnits
+        {
+            get { return _data.GetWord(HeaderOffset_ScreenheightInUnits); }
+            set { _data.SetWord(value, HeaderOffset_ScreenheightInUnits); }
+        }
+        public ushort ScreenWidthUnits
+        {
+            get { return _data.GetWord(HeaderOffset_ScreenwidthInUnits); }
+            set { _data.SetWord(value, HeaderOffset_ScreenwidthInUnits); }
+        }
 
         public byte StandardRevisionNumber { get { return _data[HeaderOffset_Standardrevisionnumber]; } }
     }

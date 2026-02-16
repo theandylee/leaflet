@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using NegativeEddy.Leaflet.Memory;
 
@@ -14,6 +14,7 @@ namespace NegativeEddy.Leaflet.Story
         private byte[] _bytes;
         private int _baseAddress;
         private int _entryBaseAddress;
+        private int _version;
 
         public char[] Separators
         {
@@ -23,10 +24,11 @@ namespace NegativeEddy.Leaflet.Story
 
         public string[] Words { get; private set; }
 
-        public ZDictionary(byte[] bytes, int address)
+        public ZDictionary(byte[] bytes, int address, int version)
         {
             _baseAddress = address;
             _bytes = bytes;
+            _version = version;
             Load();
         }
 
@@ -63,11 +65,17 @@ namespace NegativeEddy.Leaflet.Story
         {
             Words = new string[count];
 
+            int wordSize = _version <= 2 ? 2 : 3;
+
             for(int i=0; i<count; i++)
             {
                 ZStringBuilder zb = new ZStringBuilder();
                 zb.AddWord(bytes.GetWord(i*length));
                 zb.AddWord(bytes.GetWord((i*length)+2));
+                if (wordSize == 3)
+                {
+                    zb.AddWord(bytes.GetWord((i*length)+4));
+                }
                 Words[i] = zb.ToString();
             }
         }
@@ -84,9 +92,10 @@ namespace NegativeEddy.Leaflet.Story
 
         internal int IndexOf(string word)
         {
-            if (word.Length > 6)
+            int maxChars = _version <= 2 ? 6 : 9;
+            if (word.Length > maxChars)
             {
-                word = word.Substring(0, 6);
+                word = word.Substring(0, maxChars);
             }
             return Words.IndexOf(word);
         }

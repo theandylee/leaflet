@@ -15,7 +15,7 @@ namespace NegativeEddy.Leaflet.Instructions
         {
             get
             {
-                Debug.Assert(Type == OperandTypes.Variable);
+                // Debug.Assert(Type == OperandTypes.Variable);
                 return _variable;
             }
             set

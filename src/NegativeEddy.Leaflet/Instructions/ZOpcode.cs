@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -13,8 +13,13 @@ namespace NegativeEddy.Leaflet.Instructions
 
         public OpcodeDefinition Definition { get { return OpcodeDefinition.GetKnownOpcode(Identifier); } }
 
+        private bool IsVersionSpecificStore => Definition.Name == "save" || Definition.Name == "restore";
+        public bool HasStoreForVersion => Definition.HasStore || (IsVersionSpecificStore && Version >= 4);
+        public bool HasBranchForVersion => Definition.HasBranch && !(IsVersionSpecificStore && Version >= 4);
+
         byte[] _bytes;
         public int BaseAddress { get; }
+        public byte Version { get; }
 
         /// <summary>
         /// The raw bytes that make up the instruction.
@@ -27,10 +32,11 @@ namespace NegativeEddy.Leaflet.Instructions
             }
         }
 
-        public ZOpcode(byte[] data, int baseAddress)
+        public ZOpcode(byte[] data, int baseAddress, byte version = 3)
         {
             _bytes = data;
             this.BaseAddress = baseAddress;
+            this.Version = version;
         }
 
         public ushort Opcode
@@ -187,8 +193,8 @@ namespace NegativeEddy.Leaflet.Instructions
             {
                 // find the last item in the opcode and return ((item address + item length) - base address)
                 if (Definition.HasText) return (TextAddr + TextSection.LengthInBytes) - BaseAddress;
-                if (Definition.HasBranch) return (BranchOffsetAddr + BranchOffset.LengthInBytes) - BaseAddress;
-                if (Definition.HasStore) return (StoreOffsetAddr + 1) - BaseAddress;
+                if (HasBranchForVersion) return (BranchOffsetAddr + BranchOffset.LengthInBytes) - BaseAddress;
+                if (HasStoreForVersion) return (StoreOffsetAddr + 1) - BaseAddress;
                 // if none of the optional items exist, then the the StoreOffsetAddr is actually the next opcode in memory
                 return StoreOffsetAddr - BaseAddress;
             }
@@ -238,13 +244,11 @@ namespace NegativeEddy.Leaflet.Instructions
                             case OperandTypes.LargeConstant:
                                 if (Definition.IsCall && i == 0)
                                 {
-                                    operand.Constant = _bytes.GetWordUnpacked(currentOperandAddr);  // unpack addresses for call routines
+                                    operand.Constant = _bytes.GetWordUnpacked(currentOperandAddr, Version);
                                 }
                                 else if (Definition.Name == "jump")
                                 {
-                                    // the value is stored as an unsigned 16 bit offset, but is more useful to use to store
-                                    // as a 16-bit absolute value;
-                                    operand.Constant = (ushort)(_bytes.GetWord(currentOperandAddr) + BaseAddress + 1);
+                                    operand.Constant = _bytes.GetWord(currentOperandAddr);
                                 }
                                 else
                                 {
@@ -305,8 +309,7 @@ namespace NegativeEddy.Leaflet.Instructions
         {
             get
             {
-                Debug.Assert(Definition.HasStore, "instruction does not have a store variable");
-                if (Definition.HasStore)
+                if (HasStoreForVersion)
                 {
                     return new ZVariable(_bytes[StoreOffsetAddr]);
                 }
@@ -322,7 +325,7 @@ namespace NegativeEddy.Leaflet.Instructions
         /// </summary>
         private int BranchOffsetAddr
         {
-            get { return StoreOffsetAddr + (Definition.HasStore ? 1 : 0); }
+            get { return StoreOffsetAddr + (HasStoreForVersion ? 1 : 0); }
         }
 
         /// <summary>
@@ -332,7 +335,7 @@ namespace NegativeEddy.Leaflet.Instructions
         {
             get
             {
-                Debug.Assert(Definition.HasBranch);
+                // Debug.Assert(Definition.HasBranch);
 
                 if (BranchOffset.Offset == 0 || BranchOffset.Offset == 1)
                 {
@@ -353,7 +356,7 @@ namespace NegativeEddy.Leaflet.Instructions
         {
             get
             {
-                if (Definition.HasBranch)
+                if (HasBranchForVersion)
                 {
                     IList<byte> branchData = new ArraySegment<byte>(_bytes, BranchOffsetAddr, 2);
                     return new BranchOffset(branchData);
